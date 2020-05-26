@@ -1,0 +1,36 @@
+// Copyright 1998-2019 Epic Games, Inc. All Rights Reserved.
+
+namespace UnrealBuildTool.Rules
+{
+	public class AndroidMoviePlayer : ModuleRules
+	{
+        public AndroidMoviePlayer(ReadOnlyTargetRules Target) : base(Target)
+		{
+			PrivateIncludePaths.AddRange(
+				new string[]
+				{
+				}
+				);
+
+			PrivateDependencyModuleNames.AddRange(
+				new string[]
+				{
+					// "OpenGL"
+				});
+
+			PublicDependencyModuleNames.AddRange(
+				new string[]
+				{
+					"Core",
+				    "CoreUObject",
+				    "Engine",
+                    "MoviePlayer",
+                    "RenderCore",
+					// "OpenGLDrv",
+                    // "RHI",
+                    // "Slate"
+				}
+				);
+		}
+	}
+}

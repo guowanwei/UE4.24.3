@@ -1,0 +1,41 @@
+// Copyright 1998-2019 Epic Games, Inc. All Rights Reserved.
+
+/*=============================================================================
+	MetalCommon.usf: Common Metal shader code
+=============================================================================*/
+
+// Update this GUID to improve shader recompilation for Metal only shaders
+// GUID = c5ad1ae7-36ce-47c3-b5a9-41e9093577fe
+
+#pragma once
+
+#if VERTEXSHADER && HULLSHADER
+#ifndef TESSELLATIONSHADER
+#define TESSELLATIONSHADER 1
+#endif
+#endif
+
+#define STRONG_TYPE
+#define StrongTypedBuffer Buffer
+
+/* Too many bugs to enable wave-intrinsics just yet, but we are getting there.
+#if ((MAX_SHADER_LANGUAGE_VERSION >= 3 && COMPUTESHADER) || (MAX_SHADER_LANGUAGE_VERSION >= 4 && PIXELSHADER))
+#define COMPILER_SUPPORTS_WAVE_ONCE 1
+#define COMPILER_SUPPORTS_WAVE_VOTE 1
+#define COMPILER_SUPPORTS_WAVE_MINMAX 1
+#define COMPILER_SUPPORTS_WAVE_BIT_ORAND 1
+#endif
+*/
+
+#define COMPILER_SUPPORTS_MINMAX3 0
+
+#if IOS
+#if COMPILER_HLSLCC > 1
+#if PIXELSHADER
+ 	Texture2D<float4> gl_LastFragData;
+	#define FramebufferFetchES2() gl_LastFragData.Load(uint3(0,0,0),0)
+#else
+	#define FramebufferFetchES2() float4(0,0,0,0)
+#endif
+#endif
+#endif

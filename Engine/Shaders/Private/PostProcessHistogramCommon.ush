@@ -1,0 +1,146 @@
+// Copyright 1998-2019 Epic Games, Inc. All Rights Reserved.
+
+/*=============================================================================
+	PostProcessHistogramCommon.usf: PostProcessing histogram shared functions and structures.
+=============================================================================*/
+
+float EyeAdaptation_ExposureLowPercent;
+float EyeAdaptation_ExposureHighPercent;
+float EyeAdaptation_MinAverageLuminance;
+float EyeAdaptation_MaxAverageLuminance;
+float EyeAdaptation_ExposureCompensation;
+float EyeAdaptation_DeltaWorldTime;
+float EyeAdaptation_ExposureSpeedUp;
+float EyeAdaptation_ExposureSpeedDown;
+float EyeAdaptation_HistogramScale;
+float EyeAdaptation_HistogramBias;
+float EyeAdaptation_LuminanceMin;
+float EyeAdaptation_CalibrationConstantInverse;
+float EyeAdaptation_WeightSlope;
+
+// inverse of ComputeLuminanceFromHistogramPosition
+// is executed more often than ComputeLuminanceFromHistogramPosition()
+// @param Luminance
+// @return HistogramPosition 0..1
+float ComputeHistogramPositionFromLuminance(float Luminance)
+{
+	return log2(Luminance) * EyeAdaptation_HistogramScale + EyeAdaptation_HistogramBias;
+}
+
+// inverse of ComputeHistogramPositionFromLuminance()
+// is not as often executed as ComputeHistogramPositionFromLuminance()
+// @param HistogramPosition 0..1
+// @return Luminance
+float ComputeLuminanceFromHistogramPosition(float HistogramPosition)
+{
+	return exp2((HistogramPosition - EyeAdaptation_HistogramBias) / EyeAdaptation_HistogramScale);
+}
+
+#define HISTOGRAM_SIZE 64
+#define HISTOGRAM_TEXEL_SIZE (HISTOGRAM_SIZE / 4)
+
+float4 ComputeARGBStripeMaskInt(uint x)
+{
+#if ES2_PROFILE
+	// Integer modulo/remainder is not an allowed operation on ES 2
+	// todo: move function to central spot, here we assume unsigned
+	uint Temp = x - (x / 4) * 4;
+	return float4(
+		Temp == 0,
+		Temp == 1,
+		Temp == 2,
+		Temp == 3);
+#else
+	return float4(
+		(x % 4) == 0,
+		(x % 4) == 1,
+		(x % 4) == 2,
+		(x % 4) == 3);
+#endif
+}
+
+float GetHistogramBucket(Texture2D HistogramTexture, uint BucketIndex)
+{
+	uint Texel = BucketIndex / 4;
+	
+	float4 HistogramColor = HistogramTexture.Load(int3(Texel, 0, 0));
+
+	// WAR for a GLSL shader compiler bug in the driver
+#if 0
+	float UnweightedValue = dot(HistogramColor, ComputeARGBStripeMaskInt(BucketIndex));
+#else
+#if ES2_PROFILE
+	// Integer modulo/remainder is not an allowed operation on ES 2
+	// todo: move function to central spot, here we assume unsigned
+	uint channel = BucketIndex - (BucketIndex / 4) * 4;
+#else
+	uint channel = BucketIndex % 4;
+#endif
+	float UnweightedValue = HistogramColor.r;
+	UnweightedValue = (channel == 1) ? HistogramColor.g : UnweightedValue;
+	UnweightedValue = (channel == 2) ? HistogramColor.b : UnweightedValue;
+	UnweightedValue = (channel == 3) ? HistogramColor.a : UnweightedValue;
+#endif
+
+	// because of the logarithmic scale we need to weight the buckets ?
+
+//	return UnweightedValue * pow(2, BucketIndex);
+//	return UnweightedValue * pow(2, BucketIndex / HISTOGRAM_SIZE * (2 * HDRLogRadius));
+	return UnweightedValue;
+}
+
+float ComputeHistogramSum(Texture2D HistogramTexture)
+{
+	float Sum = 0;
+
+	for(uint i = 0; i < HISTOGRAM_SIZE; ++i)
+	{
+		Sum += GetHistogramBucket(HistogramTexture, i);
+	}
+
+	return Sum;
+}
+
+// @param MinFractionSum e.g. ComputeHistogramSum() * 0.5f for 50% percentil
+// @param MaxFractionSum e.g. ComputeHistogramSum() * 0.9f for 90% percentil
+float ComputeAverageLuminaneWithoutOutlier(Texture2D HistogramTexture, float MinFractionSum, float MaxFractionSum)
+{
+	float2 SumWithoutOutliers = 0;
+	
+	UNROLL for(uint i = 0; i < HISTOGRAM_SIZE; ++i)
+	{
+		float LocalValue = GetHistogramBucket(HistogramTexture, i);
+
+		// remove outlier at lower end
+		float Sub = min(LocalValue, MinFractionSum);
+		LocalValue = LocalValue - Sub;
+		MinFractionSum -= Sub;
+		MaxFractionSum -= Sub;
+
+		// remove outlier at upper end
+		LocalValue = min(LocalValue, MaxFractionSum);
+		MaxFractionSum -= LocalValue;
+
+		float LuminanceAtBucket = ComputeLuminanceFromHistogramPosition(i / (float)HISTOGRAM_SIZE);
+
+		SumWithoutOutliers += float2(LuminanceAtBucket, 1) * LocalValue;
+	}
+
+	return SumWithoutOutliers.x / max(0.0001f, SumWithoutOutliers.y);
+}
+
+float ComputeEyeAdaptationExposure(Texture2D HistogramTexture)
+{
+	float HistogramSum = ComputeHistogramSum(HistogramTexture);
+	return ComputeAverageLuminaneWithoutOutlier(HistogramTexture, HistogramSum * EyeAdaptation_ExposureLowPercent, HistogramSum * EyeAdaptation_ExposureHighPercent);
+}
+
+// Computation of triangle function on normalized space
+// used in Basic EyeAdaptation in weighting the center of the screen
+// @return range of 0..1 with 1 nx = 0.5
+// @param nx in 0..1 
+// @param slope assumed positive
+float AdaptationWeight(float nx, float slope)
+{
+	return max(1.f - 2. * slope * abs(nx - 0.5f), 0.0f);
+}
