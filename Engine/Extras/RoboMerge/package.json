@@ -18,6 +18,6 @@
     "@types/nodemailer": "^4.3.4",
     "jsonlint": "^1.6.3",
     "ldapauth-fork": "^4.0.2",
-    "nodemailer": "^4.6.3"
+    "nodemailer": "^6.4.16"
   }
 }
